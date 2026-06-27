@@ -1,0 +1,32 @@
+# Binaries and Executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+git-new
+
+# Go related ignores
+/vendor/
+*.test
+*.out
+*.prof
+
+# VSCode Extension related ignores
+VscodeExt/node_modules/
+VscodeExt/dist/
+VscodeExt/out/
+VscodeExt/.vscode-test/
+VscodeExt/*.vsix
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# IDEs and Editors
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
