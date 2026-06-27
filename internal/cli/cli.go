@@ -3,6 +3,8 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,9 +98,79 @@ func Run(args []string) int {
 	gitRunner := git.NewRunner(l)
 	fetcher := template.NewFetcher(gitRunner, l)
 
+	isRawDownload := strings.HasPrefix(resolvedSource, "raw-download://")
 	isGitIgnoreTemplate := strings.HasPrefix(resolvedSource, "gitignore://")
 
-	if isGitIgnoreTemplate {
+	if isRawDownload {
+		techName := strings.TrimPrefix(resolvedSource, "raw-download://")
+		l.Info("Bootstrapping from DhamarPutra/Git-Init-Custom...")
+
+		// Ensure destination exists
+		if err := os.MkdirAll(opts.DestDir, 0755); err != nil {
+			l.Error("Failed to create destination directory: %v", err)
+			return 1
+		}
+
+		// Helper to download a URL to a local filepath
+		downloadFile := func(url, filePath string) error {
+			l.Verbose("Downloading %s...", url)
+			resp, err := http.Get(url)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("failed to fetch %s (status: %d)", url, resp.StatusCode)
+			}
+
+			// Ensure parent directory exists
+			if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+				return err
+			}
+
+			out, err := os.Create(filePath)
+			if err != nil {
+				return err
+			}
+			defer out.Close()
+
+			_, err = io.Copy(out, resp.Body)
+			return err
+		}
+
+		// 1. Download templates/log.md
+		logURL := "https://raw.githubusercontent.com/DhamarPutra/Git-Init-Custom/main/templates/log.md"
+		if err := downloadFile(logURL, filepath.Join(opts.DestDir, "log.md")); err != nil {
+			l.Error("Failed to download template files: %v", err)
+			if !destExists {
+				filesystem.SafeRemoveAll(opts.DestDir)
+			}
+			return 1
+		}
+
+		// 2. Download templates/.github/workflows/config.yml
+		workflowURL := "https://raw.githubusercontent.com/DhamarPutra/Git-Init-Custom/main/templates/.github/workflows/config.yml"
+		if err := downloadFile(workflowURL, filepath.Join(opts.DestDir, ".github", "workflows", "config.yml")); err != nil {
+			l.Error("Failed to download workflow files: %v", err)
+			if !destExists {
+				filesystem.SafeRemoveAll(opts.DestDir)
+			}
+			return 1
+		}
+
+		// 3. Download gitignore/<Tech>.gitignore if requested (and is not empty/starter)
+		if techName != "" && strings.ToLower(techName) != "starter" {
+			gitignoreURL := fmt.Sprintf("https://raw.githubusercontent.com/DhamarPutra/Git-Init-Custom/main/gitignore/%s.gitignore", techName)
+			if err := downloadFile(gitignoreURL, filepath.Join(opts.DestDir, ".gitignore")); err != nil {
+				l.Error("Failed to download .gitignore for %s: %v", techName, err)
+				if !destExists {
+					filesystem.SafeRemoveAll(opts.DestDir)
+				}
+				return 1
+			}
+		}
+	} else if isGitIgnoreTemplate {
 		// Copy default template first so the user doesn't lose standard files (e.g. .github, log.md)
 		defaultTemplateSrc, err := resolver.Resolve(cfg.DefaultTemplate)
 		if err == nil && defaultTemplateSrc != "" && !strings.HasPrefix(defaultTemplateSrc, "gitignore://") {
